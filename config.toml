@@ -1,7 +1,0 @@
-# Copy this file to config.toml and fill your VT API key
-[virustotal]
-api_key = "f105546b6a987d52231d532641fa919134cac0ed32a6328a57c1aecad5718fc8"
-
-[run]
-# Seconds to wait after submit and after writing the result (per your spec).
-sleep_seconds = 15

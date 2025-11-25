@@ -1,122 +1,227 @@
-Threat Intel API Checker
+# Threat Intel API Checker
 
-A simple local Python tool that checks a list of domains or URLs against the VirusTotal API
+### (VirusTotal + First Watch Integration)
+
+This tool processes a CSV of domains/URLs and enriches each row with threat-intelligence data from **VirusTotal** and **First Watch**.
+It runs locally, requires no cloud components, and stores all credentials in a local `config.toml`.
+
+> **Important:**
+> `config.toml` is **NOT** included in the Git repository.
+> Instead, you will find a file named **`MODIFY-THIS-config.toml`** — copy or rename this to `config.toml` and fill in your API credentials.
+
+---
+
+## ✨ Features
+
+### 🔍 VirusTotal Integration
+
+* Submits each domain/URL for URL scanning using the v3 API.
+* Waits **15 seconds** after submitting (configurable).
+* Fetches analysis results using the returned analysis ID.
+* Extracts and writes `malicious + suspicious` detections into **Column 2** (`Number of Virus Total Detects`).
+
+### 🛰️ First Watch Integration
+
+* Authenticates using JWT via `/api/login`.
+* Queries the domain lookup endpoint `/api/feed/check/{domain}`.
+* Writes lookup results into:
+
+  * **Column 3** → `First Watch` → `"1"` if a record exists, `"0"` otherwise
+  * **Column 4** → `First Watch Details` → JSON response string
+* Prints to console whether First Watch returned data for each domain.
+
+### 🧹 Intelligent Input Cleaning
+
+* Handles defanged domains:
+
+  * `hxxp://example[.]com`
+  * `domain[dot]com`
+  * `domain;;;;;;`
+* Converts bare domains into valid URLs for VirusTotal.
+* Supports punycode (IDNA) domains.
+
+### 🛡️ Robust & Safe
+
+* Retries VirusTotal operations with exponential backoff.
+* Automatically re-authenticates to First Watch if JWT expires.
+* Invalid URLs are skipped gracefully (marked `"invalid_url"`).
+* Only **one 15-second wait per row** (after submitting to VirusTotal).
+
+---
+
+## 🗂️ CSV Columns (Auto-Enforced)
+
+The script ensures the header row always contains:
+
+| Column | Header Name                       |
+| ------ | --------------------------------- |
+| 1      | **Domain Name**                   |
+| 2      | **Number of Virus Total Detects** |
+| 3      | **First Watch**                   |
+| 4      | **First Watch Details**           |
+
+---
+
+## 🗂️ CSV Example
+
+### Input
+
+| domain            |
+| ----------------- |
+| example.com       |
+| suspicious[.]site |
+| hxxp://bad[.]io   |
+
+### Output
+
+| Domain Name     | Number of Virus Total Detects | First Watch | First Watch Details |
+| --------------- | ----------------------------- | ----------- | ------------------- |
+| example.com     | 0                             | 1           | `{...JSON...}`      |
+| suspicious.site | 3                             | 0           |                     |
+| bad.io          | 12                            | 1           | `{...JSON...}`      |
+
+---
+
+## 📦 Files Included
+
+```
 .
-For each domain in a CSV file, it submits a URL scan request, waits 15 seconds, retrieves the analysis results, and records the total number of malicious + suspicious detections back into the same CSV.
+├── vt_checker.py
+├── MODIFY-THIS-config.toml   ← template config
+├── run_vt_checker.sh
+├── requirements.txt
+└── README.md
+```
 
-✨ Features
+> Again, `config.toml` is **intentionally not included** in the repo.
+> Copy/rename `MODIFY-THIS-config.toml` → `config.toml`.
 
-Uses the VirusTotal v3 API to scan URLs.
+---
 
-Reads a CSV file where the first column contains domains or URLs.
+## ⚙️ Installation
 
-Submits each URL to VirusTotal, waits 15 seconds, fetches the analysis results, and adds the total detection count to the second column.
+### 1. Create a virtual environment
 
-Respects rate limits (basic retry logic included).
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
 
-Configurable via a simple config.toml file.
+### 2. Install dependencies
 
-🧱 Project Structure
-.
-├── vt_checker.py         # Main script
-├── config.toml           # Configuration file (API key, delay)
-├── requirements.txt      # Python dependencies
-└── README.md             # This file
-
-⚙️ Setup Instructions
-1. Prerequisites
-
-Python 3.9+
-
-A VirusTotal API key
-
-2. Install Dependencies
-
-Create and activate a virtual environment (recommended):
-
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-
-
-Then install dependencies:
-
+```bash
 pip install -r requirements.txt
+```
 
-3. Configure API Key
+---
 
-Create or edit config.toml:
+## 🔐 Configuration
 
+Create a **`config.toml`** file by copying the included example:
+
+```bash
+cp MODIFY-THIS-config.toml config.toml
+```
+
+Then edit the file with your API credentials.
+
+### VirusTotal API
+
+```toml
 [virustotal]
 api_key = "YOUR_VIRUSTOTAL_API_KEY"
+```
 
+### First Watch API
+
+```toml
+[firstwatch]
+base_url = "http://firstwatch.yatic.io"
+username = "YOUR_FIRSTWATCH_USERNAME"
+password = "YOUR_FIRSTWATCH_PASSWORD"
+```
+
+### Runtime Settings
+
+```toml
 [run]
 sleep_seconds = 15
+```
 
+---
 
-The sleep_seconds value controls how long the script waits between API calls.
+## ▶️ Running the Tool
 
-🧩 Usage
-Input CSV format
-domain	score
-example.com	
-malicious-site.com	
+### Using the launcher script
 
-The first column contains domains or URLs.
+```bash
+./run_vt_checker.sh input.csv
+```
 
-The first row is treated as a header (left unchanged).
+### Or manually
 
-The second column will be filled with the total of malicious + suspicious detections.
-
-Run the tool
+```bash
 python vt_checker.py input.csv
+```
 
+The script updates the **same CSV** (atomic write via temp file).
 
-or specify a custom config:
+---
 
-python vt_checker.py input.csv --config myconfig.toml
+## 🧠 How It Works
 
-Output
+### 1. Normalize Input
 
-After processing, the script updates the same CSV file in place.
-For example:
+* Refang (`hxxp`, `[.]`, etc.)
+* Remove trailing junk
+* Convert domains to URLs
+* Extract hostname for First Watch
 
-domain	score
-example.com	0
-malicious-site.com	7
-🧠 How It Works
+### 2. VirusTotal Workflow
 
-Submit URL scan → POST /api/v3/urls
+1. Submit URL
+2. Wait **15 seconds**
+3. Fetch analysis
+4. Write result to Column 2
 
-Wait 15 seconds
+### 3. First Watch Workflow
 
-Retrieve analysis → GET /api/v3/analyses/{analysis_id}
+1. Authenticate using JWT
+2. Lookup domain
+3. Write:
 
-Extract results → sum of malicious + suspicious
+   * `"1"` if domain exists
+   * `"0"` if not
+   * JSON details if found
+4. Print result status to console
 
-Write to CSV → store result in the second column
+### 4. Save CSV
 
-Wait 15 seconds before next entry
+* Updates header automatically
+* Writes file safely
 
-⚠️ Notes
+---
 
-The default delay (15 seconds) helps avoid hitting VirusTotal’s rate limits.
-If you use a premium API key, you can lower it in config.toml.
+## 🛠 Troubleshooting
 
-If VirusTotal returns HTTP 429 (“rate limit exceeded”), the script retries automatically.
+### “Unable to canonicalize URL”
 
-If the domain isn’t a full URL, the script prepends http:// before submitting it.
+Input is malformed — tool will mark the row `"invalid_url"`.
 
-🧾 Example Run
-$ python vt_checker.py test_domains.csv
+### First Watch returns 401 Unauthorized
 
-[1/3] Submitting: http://example.com
-Waiting 15s after submit...
-Analysis status=completed, malicious=0, suspicious=0 -> total=0
-Waiting 15s before moving to next row...
-...
-Done. Updated file: test_domains.csv
+The tool automatically re-logins and retries.
 
-📜 License
+### VirusTotal returns 429 Too Many Requests
 
-This project is provided “as is” under the MIT License.
-You are responsible for complying with VirusTotal’s API Terms of Service.
+Increase `sleep_seconds` in the config.
+
+### JSON is too long for CSV editors
+
+Use a viewer that supports long cells (VS Code recommended).
+
+---
+
+## 📜 License
+
+MIT License — free for modification and commercial use.

@@ -1,0 +1,10 @@
+[virustotal]
+api_key = "YOUR_VT_API_KEY"
+
+[run]
+sleep_seconds = 15
+
+[firstwatch]
+base_url = "http://firstwatch.yatic.io"  # as in your docs
+username = "YOUR_FW_USERNAME"
+password = "YOUR_FW_PASSWORD"

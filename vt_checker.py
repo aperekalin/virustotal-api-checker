@@ -41,6 +41,10 @@ def read_config(cfg_path: str = "config.toml"):
     fw_pass = fw.get("password")
     if not fw_user or not fw_pass:
         raise ValueError("Missing firstwatch.username or firstwatch.password in config.toml")
+    
+    screenshot_api_key = cfg.get("screenshot", {}).get("api_key")
+    if not screenshot_api_key:
+        raise ValueError("Missing screenshot.api_key in config.toml")
 
     return {
         "vt_api_key": vt_api_key,
@@ -48,7 +52,9 @@ def read_config(cfg_path: str = "config.toml"):
         "fw_base": fw_base,
         "fw_user": fw_user,
         "fw_pass": fw_pass,
-    }
+        "screenshot_api_key": screenshot_api_key,
+        }
+
 
 # ---------- VirusTotal helpers ----------
 def vt_headers(api_key: str):
@@ -88,6 +94,38 @@ def fetch_analysis_stats(api_key: str, analysis_id: str):
     malicious = int(stats.get("malicious", 0))
     suspicious = int(stats.get("suspicious", 0))
     return malicious, suspicious, attrs.get("status")
+
+# ---------- WhoisXML API helpers ----------
+def take_screenshot(domain: str, screenshot_api_key: str, folder: str):
+    """
+    Calls the WhoisXMLAPI Website Screenshot API and saves a PNG screenshot.
+    Returns (success: bool, message: str, filepath_or_none: str).
+    """
+    url = f"https://website-screenshot.whoisxmlapi.com/api/v1?apiKey={screenshot_api_key}&url={domain}"
+
+    try:
+        resp = requests.get(url, timeout=60)
+
+        # If API returns an error, it's usually JSON with a message
+        if resp.status_code != 200 or resp.headers.get("Content-Type", "").startswith("application/json"):
+            try:
+                err = resp.json()
+            except:
+                err = resp.text
+            return False, f"API error: {err}", None
+
+        # Save PNG
+        safe_name = domain.replace("/", "_").replace(":", "_")
+        filepath = os.path.join(folder, f"{safe_name}-screenshot.png")
+
+        with open(filepath, "wb") as f:
+            f.write(resp.content)
+
+        return True, "Screenshot saved", filepath
+
+    except Exception as e:
+        return False, str(e), None
+
 
 # ---------- First Watch helpers ----------
 class FirstWatchClient:
@@ -272,9 +310,15 @@ def _ensure_headers_and_width(rows):
     return rows
 
 # ---- Main processing ----
-def process_csv(csv_path: str, vt_api_key: str, sleep_seconds: int, fw_client: FirstWatchClient):
+def process_csv(csv_path: str, vt_api_key: str, sleep_seconds: int, fw_client: FirstWatchClient, screenshot_api_key: str):
     if not os.path.exists(csv_path):
         raise FileNotFoundError(f"CSV not found: {csv_path}")
+    
+    # Screenshot folder setup
+    csv_base = os.path.splitext(os.path.basename(csv_path))[0]
+    screenshot_folder = os.path.join(os.path.dirname(csv_path), f"{csv_base}-screenshot")
+
+    os.makedirs(screenshot_folder, exist_ok=True)
 
     rows = _read_rows_with_sniffer(csv_path)
     rows = _ensure_headers_and_width(rows)
@@ -364,6 +408,16 @@ def process_csv(csv_path: str, vt_api_key: str, sleep_seconds: int, fw_client: F
         row[2] = "1" if found else "0"
         row[3] = json.dumps(fw_json, ensure_ascii=False) if found else ""
 
+        # ---- SCREENSHOT STEP ----
+        domain_for_screenshot = hostname_from_url(url)
+
+        success, msg, filepath = take_screenshot(domain_for_screenshot, screenshot_api_key, screenshot_folder)
+
+        if success:
+            print(f"Screenshot created for '{domain_for_screenshot}': {filepath}")
+        else:
+            print(f"Failed to create screenshot for '{domain_for_screenshot}': {msg}")
+
         rows[i] = row
 
     # write back atomically
@@ -395,4 +449,5 @@ if __name__ == "__main__":
         vt_api_key=cfg["vt_api_key"],
         sleep_seconds=cfg["sleep_seconds"],
         fw_client=fw_client,
+        screenshot_api_key=cfg["screenshot_api_key"],
     )

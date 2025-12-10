@@ -8,3 +8,6 @@ sleep_seconds = 15
 base_url = "http://firstwatch.yatic.io"  # as in your docs
 username = "YOUR_FW_USERNAME"
 password = "YOUR_FW_PASSWORD"
+
+[screenshot]
+api_key = "YOUR_WHOISXML_WEBSITE_SCREENSHOT_API_KEY"
